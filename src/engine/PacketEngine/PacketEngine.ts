@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { z } from 'zod';
 import { Packet } from './interfaces/Packet';
+import { MatchRuleCallback } from '../../interfaces/MatchRuleCallback';
 
 export class PacketEngine {
     private packetSchema = z.object({
@@ -15,7 +16,7 @@ export class PacketEngine {
             .map(file => path.join(dirPath, file));
     }
 
-    public parsePackets(dirPath: string): Map<string, Packet[]> {
+    private _getAgentsToPacketsMap(dirPath: string): Map<string, Packet[]> {
         const files = this.listTxtFiles(dirPath);
         const agentsToPacketsMap = new Map<string, Packet[]>();
 
@@ -26,6 +27,21 @@ export class PacketEngine {
             }
         }
         return agentsToPacketsMap;
+    }
+
+    public startEngine(dirPath: string, matchRuleCallback: MatchRuleCallback) {
+        console.log(`${this.constructor.name}: starting engine...`);
+
+        // can be done in parallel, all files in memory - bad! just for now
+        const agentsToPacketsData = this._getAgentsToPacketsMap(dirPath);
+        
+        for (const [hostName, packets] of agentsToPacketsData) {
+            for (const packet of packets) {
+                matchRuleCallback(hostName, packet.userName, packet.destIp);
+            }
+        }
+
+        console.log(`${this.constructor.name}: engine finished`);
     }
 
     parsePacketsSingleFile(filePath: string): Packet[] {
