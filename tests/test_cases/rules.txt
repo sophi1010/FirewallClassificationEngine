@@ -1,3 +1,4 @@
+*|8.8.8.8|allow
 user1@gmail.com|1.2.3.4|allow
 user1@gmail.com|1.2.3.4/19|allow
 user1@gmail.com|2.2.3.4|deny

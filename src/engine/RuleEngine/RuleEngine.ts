@@ -1,11 +1,15 @@
 import fs from 'fs';
 import { z } from 'zod';
-import { Action, Matcher, UsersToRulesMap } from './interfaces/Rules';
+import { Action, Matcher, RulesMap, UserRoleContextGetter, UsersToRulesMap } from './interfaces/Rules';
 import { AddressValidator } from './AddressValidator';
 import { MatchersFactory } from './Matchers/MatchersFactory';
+import { UserRoleContextGettersFactory } from './UserRuleContext/UserRuleContextFactory';
 
 export class RuleEngine {
     private _matchers: Matcher[] = MatchersFactory.getMatchers();
+    private _userRoleContextGetters: UserRoleContextGetter[] = 
+            UserRoleContextGettersFactory.getUserRoleContext();
+
     private _rules: UsersToRulesMap = new Map();
     private _ruleSchema = z.object({
         userName: z.string(),
@@ -26,7 +30,15 @@ export class RuleEngine {
         }
 
         // get relevant rules for user
-        const rulesForUser = this._rules.get(userName);
+        const rulesForUser: RulesMap = new Map();
+        this._userRoleContextGetters.forEach(contextGetter => {
+            const context = contextGetter.getRuleContext(this._rules, userName);
+            if (context) {
+                for (const [address, action] of context) {
+                    rulesForUser.set(address, action);
+                }
+            }
+        });
 
         if (!rulesForUser) {
             console.log(`${this.constructor.name}: ${hostName}: ${userName} access to ${destIp} was allowed by default (no rule applied, no user name match)`);
@@ -37,7 +49,7 @@ export class RuleEngine {
         let action: Action | null = null;
 
         for (const matcher of this._matchers) {
-            action = matcher.matches(rulesForUser!, destIp);
+            action = matcher.matches(rulesForUser, destIp);
             if (action) {
                 console.log(`${this.constructor.name}: ${hostName}: ${userName} access to ${destIp} was ${action === Action.ALLOW ? 'allowed' : 'denied'}`);
                 break;
