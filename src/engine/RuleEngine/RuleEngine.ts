@@ -31,6 +31,8 @@ export class RuleEngine {
 
         // get relevant rules for user
         const rulesForUser: RulesMap = new Map();
+        
+        // not the right place - context sould be built in context getter
         this._userRoleContextGetters.forEach(contextGetter => {
             const context = contextGetter.getRuleContext(this._rules, userName);
             if (context) {
