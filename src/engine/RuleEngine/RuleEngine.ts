@@ -1,12 +1,18 @@
 import fs from 'fs';
 import { z } from 'zod';
-import { Action } from './interfaces/Rules';
+import { Action, Matcher, UsersToRulesMap } from './interfaces/Rules';
+import { AddressValidator } from './AddressValidator';
+import { MatchersFactory } from './Matchers/MatchersFactory';
 
 export class RuleEngine {
-    private _rules: Map<string, Map<string, Action>> = new Map();
+    private _matchers: Matcher[] = MatchersFactory.getMatchers();
+    private _rules: UsersToRulesMap = new Map();
     private _ruleSchema = z.object({
         userName: z.string(),
-        ipv4: z.string().ip({ version: 'v4' }),
+        ipv4: z.string().refine(
+            (str) => AddressValidator.isValidIPv4OrCIDR(str),
+            { message: "Invalid IPv4 or CIDR notation" }
+        ),
         action: z.enum(['allow', 'deny'])
     });
 
@@ -14,18 +20,32 @@ export class RuleEngine {
         return this._rules.size > 0;
     }
 
-    public matchRule(hostName: string,userName: string, destIp: string) {
+    public matchRule(hostName: string, userName: string, destIp: string) {
         if (!this._isStarted()){
-            throw new Error(`${this.constructor.name}: Should be started first`);
+            throw new Error(`${this.constructor.name}: Should be started first / rules not be empty`);
         }
 
+        // get relevant rules for user
         const rulesForUser = this._rules.get(userName);
-        const action = rulesForUser?.get(destIp);
 
-        if (rulesForUser) {
-            console.log(`${this.constructor.name}: ${hostName}: ${userName} access to ${destIp} was ${action === Action.ALLOW ? 'allowed' : 'denied'}`);
-        } else {
-            console.log(`${this.constructor.name}: ${hostName}: ${userName} access to ${destIp} was allowed by default (no rule applied)`);
+        if (!rulesForUser) {
+            console.log(`${this.constructor.name}: ${hostName}: ${userName} access to ${destIp} was allowed by default (no rule applied, no user name match)`);
+            return;
+        }
+
+        // search for a match
+        let action: Action | null = null;
+
+        for (const matcher of this._matchers) {
+            action = matcher.matches(rulesForUser!, destIp);
+            if (action) {
+                console.log(`${this.constructor.name}: ${hostName}: ${userName} access to ${destIp} was ${action === Action.ALLOW ? 'allowed' : 'denied'}`);
+                break;
+            }
+        }
+
+        if (!action) {
+            console.log(`${this.constructor.name}: ${hostName}: ${userName} access to ${destIp} was allowed by default (no rule applied, no matching address)`);
         }
     }
 
@@ -39,20 +59,20 @@ export class RuleEngine {
         const lines = fileContent.split('\n');
 
         for (const line of lines) {
-            const [userName, ipv4, action] = line.split('|').map(s => s.trim());
+            const [userName, ipOrCidr, action] = line.split('|').map(s => s.trim());
             try {
-                this._ruleSchema.parse({ userName, ipv4, action });
+                this._ruleSchema.parse({ userName, ipv4: ipOrCidr, action });
                 
                 if (!this._rules.has(userName)) {
-                    this._rules.set(userName, new Map().set(ipv4, action as Action));
+                    this._rules.set(userName, new Map().set(ipOrCidr, action as Action));
                     continue;
                 }
 
                 const userRules = this._rules.get(userName);
 
                 // skip redundant rules
-                if (!(userRules!.has(ipv4))) {
-                    userRules!.set(ipv4, action as Action);
+                if (!(userRules!.has(ipOrCidr))) {
+                    userRules!.set(ipOrCidr, action as Action);
                 }
 
             } catch (error) {

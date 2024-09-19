@@ -1,4 +1,4 @@
 - break basic testing via files to:
     - file and dir logic tests with real files
     - unit test for all other parts
-- added mail validation but maybe remove (all invalid users will pass if i will not throw them, extra logic not in assignment)
+- wanted to use zod with is-ip ip-cidr but it's not working as expected, module issue. not wasting time, using AddressValidator
